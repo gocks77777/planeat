@@ -5,11 +5,19 @@ from io import BytesIO
 import google.generativeai as genai
 import re
 
+# Gemini API 키 입력받기
+st.sidebar.header("API 키 입력")
+gemini_api_key = st.sidebar.text_input("Gemini API Key", type="password")
+vision_key_path = st.sidebar.text_input("Google Vision 서비스 계정 키 경로", type="default")
+
 # Gemini API 인증 설정
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-except Exception as e:
-    st.error(f"Gemini API 인증 오류: {e}")
+if gemini_api_key:
+    try:
+        genai.configure(api_key=gemini_api_key)
+    except Exception as e:
+        st.error(f"Gemini API 인증 오류: {e}")
+else:
+    st.warning("Gemini API Key를 입력해 주세요.")
 
 st.title("AI 식단 분석 & 영양제 추천 서비스")
 
@@ -22,27 +30,22 @@ weight = st.number_input("체중을 입력하세요 (kg)", min_value=0.0, step=0
 # 목표 선택
 goal = st.selectbox("목표를 선택하세요", ["건강한 몸", "다이어트", "보디빌딩", "체력 증진"])
 
-# 식사 내용 입력
-meal = st.text_area("오늘 먹은 식사를 입력해주세요")
+# 식사 내용 입력 (선택)
+meal = st.text_area("오늘 먹은 식사를 입력해주세요 (선택)")
 
-# 이미지 업로드
-image = st.file_uploader("식사 사진이 있다면 업로드 해주세요", type=["jpg", "jpeg", "png"])
+# 이미지 업로드 (선택)
+image = st.file_uploader("식사 사진이 있다면 업로드 해주세요 (선택)", type=["jpg", "jpeg", "png"])
 
 image_labels = None
-if image is not None:
+if image is not None and vision_key_path:
     try:
-        # 인증 정보 환경변수 설정
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = st.secrets["GOOGLE_APPLICATION_CREDENTIALS"]
-        # Vision API 클라이언트 생성
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = vision_key_path
         client = vision.ImageAnnotatorClient()
-        # 이미지 파일을 BytesIO로 변환
         image_bytes = BytesIO(image.read())
         content = image_bytes.getvalue()
         vision_image = vision.Image(content=content)
-        # 라벨 추출
         response = client.label_detection(image=vision_image)
         labels = response.label_annotations
-        # 음식 관련 라벨만 필터링 (간단히 food, dish, meal, cuisine, ingredient 등 키워드 포함 라벨)
         food_keywords = ["food", "dish", "meal", "cuisine", "ingredient", "fruit", "vegetable", "meat", "salad", "noodle", "rice", "bread", "soup", "chicken", "beef", "pork", "fish", "egg"]
         image_labels = [label.description for label in labels if any(k in label.description.lower() for k in food_keywords)]
         if image_labels:
@@ -51,6 +54,8 @@ if image is not None:
             st.write("음식 관련 라벨을 찾지 못했습니다.")
     except Exception as e:
         st.error(f"이미지 분석 중 오류가 발생했습니다: {e}")
+elif image is not None and not vision_key_path:
+    st.info("Vision API 키 경로를 입력해야 이미지를 분석할 수 있습니다.")
 
 # 프롬프트 생성 함수
 def generate_prompt(gender, weight, goal, meal_text, image_labels=None):
@@ -61,7 +66,7 @@ def generate_prompt(gender, weight, goal, meal_text, image_labels=None):
 - 목표: {goal}
 
 오늘의 식사:
-{meal_text}
+{meal_text if meal_text else '입력 없음'}
 
 이미지에서 인식된 음식들:
 {image_labels if image_labels else '없음'}
@@ -90,14 +95,16 @@ def ask_gemini(prompt: str):
 
 # 분석하기 버튼 및 결과 출력
 if st.button("분석하기"):
-    if sex and weight > 0 and goal and meal and image_labels is not None:
+    if not gemini_api_key:
+        st.warning("Gemini API Key를 입력해 주세요.")
+    elif not (meal or image_labels):
+        st.warning("식사 내용 또는 식사 사진 중 하나는 반드시 입력해야 합니다.")
+    elif sex and weight > 0 and goal:
         prompt = generate_prompt(sex, weight, goal, meal, image_labels)
         response = ask_gemini(prompt)
         if response:
             try:
-                # [1. ...], [2. ...] 등으로 항목별 분리
                 sections = re.split(r'(\[\d+\.\s.*?\])', response)
-                # sections는 ['', '[1. 식사 요약]', '내용', '[2. 주요 영양소 평가]', '내용', ...] 형태
                 parsed = []
                 i = 1
                 while i < len(sections):
@@ -130,4 +137,4 @@ if st.button("분석하기"):
             except Exception as e:
                 st.warning(f"응답 파싱 중 문제가 발생했습니다. 원본 응답을 표시합니다.\n\n{response}")
     else:
-        st.warning("모든 입력값(성별, 체중, 목표, 식사 내용, 이미지 분석 결과)이 필요합니다.")
+        st.warning("성별, 체중, 목표를 모두 입력해 주세요.")
