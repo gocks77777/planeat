@@ -5,24 +5,19 @@ from io import BytesIO
 import google.generativeai as genai
 import re
 
-# Gemini API 키 입력받기
-st.sidebar.header("API 키 입력")
-gemini_api_key = st.sidebar.text_input("Gemini API Key", type="password")
-vision_key_path = st.sidebar.text_input("Google Vision 서비스 계정 키 경로", type="default")
-
-# Gemini API 인증 설정
-if gemini_api_key:
-    try:
-        genai.configure(api_key=gemini_api_key)
-    except Exception as e:
-        st.error(f"Gemini API 인증 오류: {e}")
-else:
-    st.warning("Gemini API Key를 입력해 주세요.")
+# Gemini API 인증 설정 (secrets.toml에서만 불러옴)
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+except Exception as e:
+    st.error(f"Gemini API 인증 오류: {e}")
 
 st.title("AI 식단 분석 & 영양제 추천 서비스")
 
 # 성별 선택
 sex = st.selectbox("성별을 선택하세요", ["남성", "여성"])
+
+# 신장 입력 (cm)
+height = st.number_input("신장을 입력하세요 (cm)", min_value=0.0, step=0.1)
 
 # 체중 입력 (kg)
 weight = st.number_input("체중을 입력하세요 (kg)", min_value=0.0, step=0.1)
@@ -37,6 +32,7 @@ meal = st.text_area("오늘 먹은 식사를 입력해주세요 (선택)")
 image = st.file_uploader("식사 사진이 있다면 업로드 해주세요 (선택)", type=["jpg", "jpeg", "png"])
 
 image_labels = None
+vision_key_path = st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS", None)
 if image is not None and vision_key_path:
     try:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = vision_key_path
@@ -55,13 +51,14 @@ if image is not None and vision_key_path:
     except Exception as e:
         st.error(f"이미지 분석 중 오류가 발생했습니다: {e}")
 elif image is not None and not vision_key_path:
-    st.info("Vision API 키 경로를 입력해야 이미지를 분석할 수 있습니다.")
+    st.info("Vision API 키 경로가 secrets.toml에 필요합니다.")
 
 # 프롬프트 생성 함수
-def generate_prompt(gender, weight, goal, meal_text, image_labels=None):
+def generate_prompt(gender, height, weight, goal, meal_text, image_labels=None):
     prompt = f"""
 사용자 정보:
 - 성별: {gender}
+- 신장: {height}cm
 - 체중: {weight}kg
 - 목표: {goal}
 
@@ -95,12 +92,12 @@ def ask_gemini(prompt: str):
 
 # 분석하기 버튼 및 결과 출력
 if st.button("분석하기"):
-    if not gemini_api_key:
-        st.warning("Gemini API Key를 입력해 주세요.")
+    if not st.secrets.get("GEMINI_API_KEY"):
+        st.warning("Gemini API Key가 secrets.toml에 필요합니다.")
     elif not (meal or image_labels):
         st.warning("식사 내용 또는 식사 사진 중 하나는 반드시 입력해야 합니다.")
-    elif sex and weight > 0 and goal:
-        prompt = generate_prompt(sex, weight, goal, meal, image_labels)
+    elif sex and height > 0 and weight > 0 and goal:
+        prompt = generate_prompt(sex, height, weight, goal, meal, image_labels)
         response = ask_gemini(prompt)
         if response:
             try:
@@ -137,4 +134,4 @@ if st.button("분석하기"):
             except Exception as e:
                 st.warning(f"응답 파싱 중 문제가 발생했습니다. 원본 응답을 표시합니다.\n\n{response}")
     else:
-        st.warning("성별, 체중, 목표를 모두 입력해 주세요.")
+        st.warning("성별, 신장, 체중, 목표를 모두 입력해 주세요.")
