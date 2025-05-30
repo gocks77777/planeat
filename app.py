@@ -3,6 +3,7 @@ import os
 from google.cloud import vision
 import google.generativeai as genai
 import re
+import traceback
 
 # Gemini API 인증 설정 (secrets.toml에서만 불러옴)
 try:
@@ -47,6 +48,8 @@ if image is not None and vision_key_path:
         else:
             st.write("음식 관련 라벨을 찾지 못했습니다.")
     except Exception as e:
+        print("[이미지 분석 오류 상세 로그]")
+        print(traceback.format_exc())
         st.error(f"이미지 분석 중 오류가 발생했습니다: {e}")
 elif image is not None and not vision_key_path:
     st.info("Vision API 키 경로가 secrets.toml에 필요합니다.")
