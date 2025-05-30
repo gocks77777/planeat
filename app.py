@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 from google.cloud import vision
-from io import BytesIO
 import google.generativeai as genai
 import re
 
@@ -37,8 +36,7 @@ if image is not None and vision_key_path:
     try:
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = vision_key_path
         client = vision.ImageAnnotatorClient()
-        image_bytes = BytesIO(image.read())
-        content = image_bytes.getvalue()
+        content = image.read()  # 한 번만 읽기
         vision_image = vision.Image(content=content)
         response = client.label_detection(image=vision_image)
         labels = response.label_annotations
